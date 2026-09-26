@@ -98,6 +98,10 @@ if [[ "$OS" == "Darwin" ]]; then
   launchctl bootstrap "gui/$(id -u)" "$PLIST"
 else
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1 || {
+    echo "Сервер собран ($BIN), но на этой машине нет systemd для автозапуска (WSL без systemd, контейнер)." >&2
+    echo "WSL: включи systemd (/etc/wsl.conf: [boot] systemd=true, затем wsl --shutdown) и запусти скрипт снова." >&2
+    exit 1; }
   mkdir -p "$HOME/.config/systemd/user"
   cat > "$HOME/.config/systemd/user/telegram-bot-api.service" <<EOF
 [Unit]
