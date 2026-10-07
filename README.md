@@ -133,7 +133,7 @@ bash scripts/install-service.sh   # автозапуск (systemd на Linux, la
 | Путь | Что |
 | --- | --- |
 | `.env` | Токен, твой ID, ключ OpenAI для голоса или путь к локальной модели |
-| `projects.json` | Необязательный список проектов (пример: `projects.example.json`) |
+| `projects.json` | Необязательный список проектов (пример: `projects.example.json`). Одна папка в списке — режим «одной главной папки»: бот не спрашивает проект, агент сам ходит по остальным папкам |
 | `~/.claude-telegram/` | База бота и полученные файлы (`CLAUDE_TELEGRAM_DATA`) |
 | `~/.claude/` | Сам Claude Code: вход, настройки, сессии |
 

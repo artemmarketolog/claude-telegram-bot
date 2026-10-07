@@ -103,7 +103,7 @@ export function setup({ state, desktop, api, runnerFactory } = {}) {
   desktop ??= new FakeDesktop();
   const runners = [];
   const project = { id: 'workspace', label: 'workspace', path: '/home/user/workspace', key: 'k1' };
-  const gateway = new Gateway({ api, state, desktop, ownerId: OWNER, botId: 987654321, dataDir: dir, projects: [project], home: '/home/user',
+  const gateway = new Gateway({ api, state, desktop, ownerId: OWNER, botId: 987654321, dataDir: dir, projects: [project, { id: 'site', label: 'site', path: '/home/user/site', key: 'k2' }], home: '/home/user',
     defaults: { model: 'opus[1m]', effort: 'xhigh' }, secrets: ['SECRET-TOKEN-123'],
     runnerFactory: runnerFactory ?? (options => { const r = new FakeRunner(options); runners.push(r); return r; }) });
   return { dir, api, state, desktop, runners, gateway, project };

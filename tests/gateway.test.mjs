@@ -64,14 +64,14 @@ class FakeDesktop {
   async lastAnswer() { return null; }
 }
 
-function setup() {
+function setup({ single = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'claude-tg-'));
   const api = new FakeApi();
   const state = new State(join(dir, 'state.sqlite'));
   const desktop = new FakeDesktop();
   const runners = [];
   const project = { id: 'workspace', label: 'workspace', path: '/home/user/workspace', key: 'k1' };
-  const gateway = new Gateway({ api, state, desktop, ownerId: OWNER, botId: 987654321, dataDir: dir, projects: [project], home: '/home/user',
+  const gateway = new Gateway({ api, state, desktop, ownerId: OWNER, botId: 987654321, dataDir: dir, projects: single ? [project] : [project, { id: 'site', label: 'site', path: '/home/user/site', key: 'k2' }], home: '/home/user',
     defaults: { model: 'opus[1m]', effort: 'xhigh' }, secrets: ['SECRET-TOKEN-123'],
     runnerFactory: options => { const r = new FakeRunner(options); runners.push(r); return r; } });
   return { dir, api, state, desktop, runners, gateway, project };
@@ -557,3 +557,19 @@ test('ultracode starts the session at xhigh with the ultracode setting; another 
   assert.deepEqual(runner.applied, { effortLevel: 'high', ultracode: null });
 });
 
+
+test('one folder: a lobby message starts at once without a project line; /new and the button skip the project menu', async () => {
+  const ctx = setup({ single: true });
+  await ctx.gateway.receive(message({ text: 'Сделай отчёт' }));
+  await settle(ctx.gateway);
+  const chat = ctx.state.chats()[0];
+  assert.equal(chat.project, 'workspace');
+  assert.equal(ctx.api.calls.some(c => String(c.params?.text ?? '').startsWith('📁')), false);
+  const topic = ctx.api.calls.find(c => c.method === 'createForumTopic');
+  assert.equal(topic.params.name.includes(' · '), false);
+  await ctx.gateway.receive(message({ text: '/new' }));
+  await settle(ctx.gateway);
+  assert.equal(ctx.state.chats().length, 2);
+  assert.equal(ctx.api.calls.some(c => c.params?.text === 'Новый чат в:'), false);
+  ctx.state.close();
+});
