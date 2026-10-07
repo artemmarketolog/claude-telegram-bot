@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, writeFileSync, appendFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, appendFileSync, mkdirSync, utimesSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { State } from '../lib/state.mjs';
@@ -504,3 +504,56 @@ test('with the cloud Bot API a file over 50 MB is not uploaded; the chat learns 
   assert.equal(ctx.api.of('sendDocument').length, 0);
   assert.equal(ctx.api.of('sendText').filter(c => /больше 50 МБ/.test(c.text) && /video\.mov/.test(c.text)).length, 1);
 });
+
+test('copies of sent files older than 14 days are deleted with their /files entries; fresh ones and received files stay', async () => {
+  const { dir, state, gateway } = setup();
+  const out = join(dir, 'files', 'chat-1', 'outputs');
+  mkdirSync(out, { recursive: true });
+  const old = join(out, 'a__old.mp4'), fresh = join(out, 'b__fresh.png'), received = join(dir, 'files', 'chat-1', 'voice.ogg');
+  for (const path of [old, fresh, received]) writeFileSync(path, 'x');
+  const past = (Date.now() - 15 * 86400000) / 1000;
+  utimesSync(old, past, past); utimesSync(received, past, past);
+  const oldFile = state.addFile('chat-1', { path: old, name: 'old.mp4', size: 1, direction: 'out' });
+  const freshFile = state.addFile('chat-1', { path: fresh, name: 'fresh.png', size: 1, direction: 'out' });
+  state.set('artifact:answer:s:u:file:/x/old.mp4', oldFile.id);
+  await gateway.pruneOutputs();
+  assert.equal(existsSync(old), false);
+  assert.equal(existsSync(fresh), true);
+  assert.equal(existsSync(received), true);
+  assert.deepEqual(state.files('chat-1').map(f => f.id), [freshFile.id]);
+  assert.equal(state.get('artifact:answer:s:u:file:/x/old.mp4'), null);
+  state.close();
+});
+test('/model lists the newest Opus, Fable, Sonnet and Haiku with versions; ultracode follows max', async () => {
+  const ctx = setup();
+  const { chat } = await startChat(ctx);
+  const all = ['low', 'medium', 'high', 'xhigh', 'max'];
+  ctx.state.set('models', { at: Date.now(), list: [
+    { value: 'default', resolved: 'claude-opus-5-5', displayName: 'Default', efforts: all },
+    { value: 'opus[1m]', resolved: 'claude-opus-5-5[1m]', displayName: 'Opus (1M context)', efforts: all },
+    { value: 'claude-fable-5-1[1m]', resolved: 'claude-fable-5-1[1m]', displayName: 'Fable', efforts: all },
+    { value: 'sonnet', resolved: 'claude-sonnet-5-5', displayName: 'Sonnet', efforts: all },
+    { value: 'haiku', resolved: 'claude-haiku-4-5-20251001', displayName: 'Haiku', efforts: [] },
+    { value: 'claude-sonnet-5', resolved: 'claude-sonnet-5', displayName: 'Sonnet 5', efforts: all },
+    { value: 'claude-opus-4-8', resolved: 'claude-opus-4-8', displayName: 'Opus 4.8', efforts: all },
+  ] });
+  await ctx.gateway.receive(inTopic(chat.topicId, { text: '/model' }));
+  assert.deepEqual(lastButtons(ctx.api).map(b => b.text), ['Opus 5.5', 'Fable 5.1', 'Sonnet 5.5', 'Haiku 4.5']);
+  await press(ctx.gateway, lastButtons(ctx.api).find(b => b.text === 'Sonnet 5.5'), chat.topicId);
+  assert.deepEqual(lastButtons(ctx.api).map(b => b.text), [...all, 'ultracode']);
+  await press(ctx.gateway, lastButtons(ctx.api).find(b => b.text === 'ultracode'), chat.topicId);
+  assert.equal(ctx.state.chat(chat.id).model, 'sonnet');
+  assert.equal(ctx.state.chat(chat.id).effort, 'ultracode');
+});
+
+test('ultracode starts the session at xhigh with the ultracode setting; another level switches it off', async () => {
+  const { ClaudeRunner } = await import('../lib/claude.mjs');
+  let options;
+  const runner = new ClaudeRunner({ id: 'u', cwd: '/tmp', effort: 'ultracode', env: {}, queryImpl: args => { options = args.options; return { applyFlagSettings: async s => { runner.applied = s; }, async *[Symbol.asyncIterator]() {} }; } }).start();
+  assert.equal(options.effort, 'xhigh');
+  assert.deepEqual(options.settings, { ultracode: true });
+  runner.alive = true;
+  await runner.setEffort('high');
+  assert.deepEqual(runner.applied, { effortLevel: 'high', ultracode: null });
+});
+

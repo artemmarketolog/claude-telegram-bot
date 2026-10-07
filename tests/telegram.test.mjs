@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -219,8 +221,36 @@ test('video upload uses the player method with native multipart media and playba
     assert.equal(options.body.get('document'), null);
     return json({ message_id: 4, video: { file_id: 'native-video' } });
   });
-  const result = await bot.sendVideo(42, path, { supports_streaming: true, duration: 12, caption: 'Результат' });
+  const result = await bot.sendVideo(42, path, { supports_streaming: true, duration: 12, width: 1920, height: 1080, caption: 'Результат' });
   assert.equal(result.video.file_id, 'native-video');
+});
+
+test('video uploads infer landscape, portrait and square playback geometry from real MP4s', async t => {
+  const dir = await directory(t);
+  const run = promisify(execFile);
+  const shapes = [['landscape', 320, 180], ['portrait', 180, 320], ['square', 240, 240]];
+  for (const [name, width, height] of shapes) {
+    await run('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `color=blue:s=${width}x${height}:r=5`,
+      '-t', '1', '-c:v', 'libx264', '-threads', '1', '-pix_fmt', 'yuv420p', join(dir, `${name}.mp4`)]);
+  }
+  for (const [name, width, height] of shapes) {
+    const path = join(dir, `${name}.mp4`);
+    let upload;
+    const bot = api(async (url, options) => { upload = { url, body: options.body }; return json({ message_id: 4 }); });
+    await bot.sendVideo(42, path, { supports_streaming: true, message_thread_id: 10 });
+    assert.ok(upload.url.endsWith('/sendVideo'));
+    assert.equal(upload.body.get('width'), String(width), name);
+    assert.equal(upload.body.get('height'), String(height), name);
+    assert.equal(upload.body.get('duration'), '1', name);
+    assert.equal(upload.body.get('message_thread_id'), '10');
+  }
+});
+
+test('unreadable video metadata rejects before upload so the gateway can use a document', async t => {
+  const path = join(await directory(t), 'broken.mp4');
+  await writeFile(path, 'not a video');
+  const bot = api(async () => { assert.fail('must not send a video with unknown geometry'); });
+  await assert.rejects(bot.sendVideo(42, path), error => error instanceof TelegramApiError && error.code === 400);
 });
 
 test('oversize streamed downloads are removed and existing files are preserved', async t => {

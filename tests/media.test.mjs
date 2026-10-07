@@ -84,7 +84,7 @@ test('real ffmpeg converts OGG and chunks audio; mocked API receives MP3 without
       calls++;
       assert.equal(url, 'https://api.openai.com/v1/audio/transcriptions');
       assert.equal(options.headers.Authorization, 'Bearer test-key-not-real');
-      assert.equal(options.body.get('model'), 'gpt-4o-transcribe');
+      assert.equal(options.body.get('model'), 'whisper-1');
       assert.ok(options.body.get('file').size < 25_000_000);
       assert.ok(options.body.get('file').name.endsWith('.mp3'));
       if (calls > 1) assert.equal(options.body.get('prompt'), `Часть ${calls - 1}`);
